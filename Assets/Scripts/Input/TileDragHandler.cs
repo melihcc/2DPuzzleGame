@@ -4,34 +4,32 @@ using UnityEngine;
 
 public class TileDragHandler : MonoBehaviour
 {
-    private Tile tile;
-    private GridManager gridManager;
-    private GameManager gameManager;
-    private Pathfinder pathfinder;
-    private PathPreview pathPreview;
-
-    private GridCell originalCell;
-    private Camera mainCamera;
-
-    private bool isMoving;
-    private GameObject previewTile;
-
+    private Tile         tile;
+    private GridManager  gridManager;
+    private GameManager  gameManager;
+    private Pathfinder   pathfinder;
+    private PathPreview  pathPreview;
     private AudioManager audioManager;
-
     private CameraShaker cameraShaker;
+
+    private GridCell   originalCell;
+    private Camera     mainCamera;
+    private bool       isMoving;
+    private GameObject previewTile;
 
     private void Awake()
     {
-        tile = GetComponent<Tile>();
-        mainCamera = Camera.main;
-
-        gridManager = FindFirstObjectByType<GridManager>();
-        gameManager = FindFirstObjectByType<GameManager>();
-        pathfinder = FindFirstObjectByType<Pathfinder>();
-        pathPreview = FindFirstObjectByType<PathPreview>();
+        tile         = GetComponent<Tile>();
+        mainCamera   = Camera.main;
+        gridManager  = FindFirstObjectByType<GridManager>();
+        gameManager  = FindFirstObjectByType<GameManager>();
+        pathfinder   = FindFirstObjectByType<Pathfinder>();
+        pathPreview  = FindFirstObjectByType<PathPreview>();
         audioManager = FindFirstObjectByType<AudioManager>();
         cameraShaker = FindFirstObjectByType<CameraShaker>();
     }
+
+    // ─── Drag events ─────────────────────────────────────────────────────────
 
     public void BeginDrag()
     {
@@ -39,22 +37,13 @@ public class TileDragHandler : MonoBehaviour
             return;
 
         originalCell = tile.CurrentCell;
-
         tile.SetAlpha(0.35f);
 
         previewTile = Instantiate(gameObject, transform.position, Quaternion.identity);
 
-        TileDragHandler previewDragHandler = previewTile.GetComponent<TileDragHandler>();
-        if (previewDragHandler != null)
-            Destroy(previewDragHandler);
-
-        Collider2D previewCollider = previewTile.GetComponent<Collider2D>();
-        if (previewCollider != null)
-            previewCollider.enabled = false;
-
-        Tile previewTileScript = previewTile.GetComponent<Tile>();
-        if (previewTileScript != null)
-            previewTileScript.SetAlpha(0.85f);
+        if (previewTile.TryGetComponent<TileDragHandler>(out var ph))  Destroy(ph);
+        if (previewTile.TryGetComponent<Collider2D>(out var col))      col.enabled = false;
+        if (previewTile.TryGetComponent<Tile>(out var pt))             pt.SetAlpha(0.85f);
     }
 
     public void Drag(Vector3 worldPosition)
@@ -83,7 +72,7 @@ public class TileDragHandler : MonoBehaviour
         if (pathPreview != null)
             pathPreview.ShowPath(path);
 
-        if (gameManager != null && gameManager.gameplayUI != null)
+        if (gameManager.gameplayUI != null)
             gameManager.gameplayUI.ShowMovePreviewCost(path.Count);
     }
 
@@ -105,10 +94,7 @@ public class TileDragHandler : MonoBehaviour
 
         GridCell targetCell = gridManager.GetClosestCell(releasePosition);
 
-        if (targetCell == null || targetCell == originalCell)
-            return;
-
-        if (targetCell.IsBlocked)
+        if (targetCell == null || targetCell == originalCell || targetCell.IsBlocked)
             return;
 
         List<GridCell> path = pathfinder.FindPath(originalCell, targetCell);
@@ -119,19 +105,38 @@ public class TileDragHandler : MonoBehaviour
         if (!gameManager.HasEnoughMoves(path.Count))
             return;
 
+        // ── Empty cell: move ──────────────────────────────────────────────────
         if (targetCell.IsEmpty)
         {
+            gameManager.SaveStateForUndo();
+            gameManager.ClearHints();
             StartCoroutine(MoveToCellWithAnimation(targetCell, path));
             return;
         }
 
+        // ── Occupied cell: check merge eligibility ────────────────────────────
         Tile targetTile = targetCell.CurrentTile;
 
-        if (targetTile.Level == tile.Level)
-        {
+        bool isBomb = tile.TileType == TileType.Bomb || targetTile.TileType == TileType.Bomb;
+
+        bool canMerge = tile.Level == targetTile.Level
+            || tile.TileType       == TileType.Wild
+            || targetTile.TileType == TileType.Wild
+            || isBomb;
+
+        if (!canMerge)
+            return;
+
+        gameManager.SaveStateForUndo();
+        gameManager.ClearHints();
+
+        if (isBomb)
+            StartCoroutine(BombMergeWithAnimation(targetTile, path, targetCell));
+        else
             StartCoroutine(MergeWithAnimation(targetTile, path));
-        }
     }
+
+    // ─── Coroutines ──────────────────────────────────────────────────────────
 
     private IEnumerator MoveToCellWithAnimation(GridCell targetCell, List<GridCell> path)
     {
@@ -140,6 +145,8 @@ public class TileDragHandler : MonoBehaviour
         originalCell.ClearTile();
         tile.SetCellWithoutMoving(targetCell);
         targetCell.SetTile(tile);
+
+        if (audioManager != null) audioManager.PlayMoveSound();
 
         gameManager.RegisterMoves(path.Count);
 
@@ -156,24 +163,68 @@ public class TileDragHandler : MonoBehaviour
 
         yield return StartCoroutine(tile.MoveAlongPath(path));
 
+        bool isWild = tile.TileType == TileType.Wild || targetTile.TileType == TileType.Wild;
+
         targetTile.IncreaseLevel();
         targetTile.PlayMergeParticle();
-        if (audioManager != null)
-    audioManager.PlayMergeSound();
 
-if (cameraShaker != null)
-{
-    float shakeStrength = 0.03f + targetTile.Level * 0.01f;
-    cameraShaker.Shake(0.08f, shakeStrength);
-}
+        if (audioManager != null)
+        {
+            if (isWild) audioManager.PlayWildMergeSound();
+            else        audioManager.PlayMergeSound();
+        }
+
+        float shakeStrength = 0.03f + targetTile.Level * 0.01f;
+        if (isWild) shakeStrength *= 1.5f;
+        if (cameraShaker != null) cameraShaker.Shake(0.08f, shakeStrength);
+
         yield return StartCoroutine(targetTile.PlayMergePunch());
 
-        int scoreToAdd = targetTile.Level * 100;
-        gameManager.RegisterMergeResult(path.Count, scoreToAdd);
+        int baseScore  = targetTile.Level * 100;
+        if (isWild) baseScore = Mathf.RoundToInt(baseScore * 1.25f);
+
+        gameManager.RegisterMergeResult(path.Count, baseScore, targetTile.transform.position);
         gameManager.HandleAfterMerge();
 
         Destroy(gameObject);
     }
+
+    private IEnumerator BombMergeWithAnimation(Tile targetTile, List<GridCell> path, GridCell explosionCenter)
+    {
+        isMoving = true;
+
+        originalCell.ClearTile();
+
+        yield return StartCoroutine(tile.MoveAlongPath(path));
+
+        // Patlama
+        if (audioManager  != null) audioManager.PlayBombSound();
+        if (cameraShaker  != null) cameraShaker.Shake(0.22f, 0.18f);
+
+        int explosionScore = gridManager.ExplodeBomb(explosionCenter);
+
+        int baseScore = Mathf.Max(tile.Level, targetTile.Level) * 150;
+        int total     = baseScore + explosionScore;
+
+        if (explosionScore > 0)
+            FloatingText.Spawn(
+                explosionCenter.transform.position + Vector3.up * 0.6f,
+                $"BOOM! +{explosionScore}",
+                new Color(1f, 0.4f, 0f),
+                4f
+            );
+
+        // Merkezdeki tile'ı temizle
+        explosionCenter.ClearTile();
+        Destroy(targetTile.gameObject);
+
+        gameManager.RegisterMergeResult(path.Count, total, explosionCenter.transform.position);
+        gameManager.HandleAfterMerge();
+
+        Destroy(gameObject);
+    }
+
+    // ─── Preview feedback ─────────────────────────────────────────────────────
 
     private void HidePreviewFeedback()
     {
@@ -184,6 +235,8 @@ if (cameraShaker != null)
             gameManager.gameplayUI.HideMovePreviewCost();
     }
 
+    // ─── Editor input ─────────────────────────────────────────────────────────
+
 #if UNITY_EDITOR
     private void OnMouseDown()
     {
@@ -192,12 +245,9 @@ if (cameraShaker != null)
 
     private void OnMouseDrag()
     {
-        Vector3 mousePosition = Input.mousePosition;
-        mousePosition.z = -mainCamera.transform.position.z;
-
-        Vector3 worldPosition = mainCamera.ScreenToWorldPoint(mousePosition);
-
-        Drag(worldPosition);
+        Vector3 mousePos = Input.mousePosition;
+        mousePos.z = -mainCamera.transform.position.z;
+        Drag(mainCamera.ScreenToWorldPoint(mousePos));
     }
 
     private void OnMouseUp()

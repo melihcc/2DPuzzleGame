@@ -7,4 +7,5 @@ public class InitialTileData
     public int x;
     public int y;
     public int level;
+    public TileType tileType = TileType.Normal;
 }
