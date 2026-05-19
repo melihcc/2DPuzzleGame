@@ -20,8 +20,26 @@ public class Tile : MonoBehaviour
     public GameObject mergeParticlePrefab;
 
     public int Level { get; private set; }
-
+    public TileType TileType { get; private set; }
     public GridCell CurrentCell { get; private set; }
+
+    private Coroutine hintCoroutine;
+
+    // Her level için ayrı renk (1-8, sonrası döngüsel)
+    private static readonly Color[] LevelColors =
+    {
+        new Color(0.31f, 0.76f, 0.97f), // 1 - Açık mavi
+        new Color(0.50f, 0.78f, 0.52f), // 2 - Yeşil
+        new Color(1.00f, 0.84f, 0.32f), // 3 - Amber
+        new Color(1.00f, 0.54f, 0.40f), // 4 - Mercan
+        new Color(0.90f, 0.35f, 0.35f), // 5 - Kırmızı
+        new Color(0.74f, 0.42f, 0.78f), // 6 - Mor
+        new Color(0.30f, 0.71f, 0.67f), // 7 - Turkuaz
+        new Color(0.96f, 0.38f, 0.57f), // 8 - Pembe
+    };
+
+    private static readonly Color WildColor  = new Color(1.00f, 0.85f, 0.00f); // Altın
+    private static readonly Color BombColor  = new Color(0.22f, 0.22f, 0.28f); // Koyu antrasit
 
     private void Awake()
     {
@@ -32,13 +50,14 @@ public class Tile : MonoBehaviour
             levelText = GetComponentInChildren<TMP_Text>();
     }
 
-    public void Setup(int level, GridCell cell)
+    public void Setup(int level, GridCell cell, TileType tileType = TileType.Normal)
     {
         Level = level;
+        TileType = tileType;
         CurrentCell = cell;
 
         transform.position = cell.transform.position;
-        gameObject.name = $"Tile_Level_{level}";
+        gameObject.name = $"Tile_{tileType}_{level}";
 
         UpdateVisual();
     }
@@ -74,28 +93,26 @@ public class Tile : MonoBehaviour
             transform.position = targetPosition;
         }
     }
+
     public IEnumerator PlaySpawnAnimation()
     {
         Vector3 originalScale = transform.localScale;
-
         transform.localScale = Vector3.zero;
 
-        float duration = 0.18f;
+        float duration = 0.28f;
         float timer = 0f;
 
         while (timer < duration)
         {
             timer += Time.deltaTime;
-            float t = timer / duration;
+            float t = Mathf.Clamp01(timer / duration);
 
-            float easedT = Mathf.Sin(t * Mathf.PI * 0.5f);
+            // Overshoot: 0→1.2 sonra 1.2→1.0
+            float scale = t < 0.72f
+                ? Mathf.LerpUnclamped(0f, 1.2f, t / 0.72f)
+                : Mathf.LerpUnclamped(1.2f, 1f, (t - 0.72f) / 0.28f);
 
-            transform.localScale = Vector3.Lerp(
-                Vector3.zero,
-                originalScale,
-                easedT
-            );
-
+            transform.localScale = originalScale * scale;
             yield return null;
         }
 
@@ -105,103 +122,136 @@ public class Tile : MonoBehaviour
     public void IncreaseLevel()
     {
         Level++;
-        gameObject.name = $"Tile_Level_{Level}";
+        gameObject.name = $"Tile_{TileType}_{Level}";
         UpdateVisual();
     }
 
     public void PlayMergeParticle()
-{
-    if (mergeParticlePrefab == null)
-        return;
+    {
+        if (mergeParticlePrefab == null)
+            return;
 
-    GameObject particle = Instantiate(
-        mergeParticlePrefab,
-        transform.position,
-        Quaternion.identity
-    );
+        GameObject particle = Instantiate(
+            mergeParticlePrefab,
+            transform.position,
+            Quaternion.identity
+        );
 
-    Destroy(particle, 1f);
-}
+        Destroy(particle, 1f);
+    }
 
     public void SetAlpha(float alpha)
     {
         if (spriteRenderer != null)
         {
-            Color color = spriteRenderer.color;
-            color.a = alpha;
-            spriteRenderer.color = color;
+            Color c = spriteRenderer.color;
+            c.a = alpha;
+            spriteRenderer.color = c;
         }
 
         if (levelText != null)
         {
-            Color textColor = levelText.color;
-            textColor.a = alpha;
-            levelText.color = textColor;
+            Color c = levelText.color;
+            c.a = alpha;
+            levelText.color = c;
         }
     }
 
-    private void UpdateVisual()
-    {
-        if (levelText != null)
-            levelText.text = Level.ToString();
+    // --- Hint pulse ---
 
-        if (spriteRenderer == null)
+    public void StartHintPulse()
+    {
+        StopHintPulse();
+        hintCoroutine = StartCoroutine(HintPulseRoutine());
+    }
+
+    public void StopHintPulse()
+    {
+        if (hintCoroutine == null)
             return;
 
-        if (Level == 1)
-            spriteRenderer.color = Color.blue;
-        else if (Level == 2)
-            spriteRenderer.color = Color.green;
-        else if (Level == 3)
-            spriteRenderer.color = Color.yellow;
-        else if (Level == 4)
-            spriteRenderer.color = Color.red;
-        else
-            spriteRenderer.color = Color.magenta;
+        StopCoroutine(hintCoroutine);
+        hintCoroutine = null;
+        transform.localScale = Vector3.one;
     }
+
+    private IEnumerator HintPulseRoutine()
+    {
+        float time = 0f;
+
+        while (true)
+        {
+            time += Time.deltaTime;
+            float pulse = 1f + Mathf.Sin(time * 7f) * 0.13f;
+            transform.localScale = Vector3.one * pulse;
+            yield return null;
+        }
+    }
+
+    // --- Merge punch ---
+
     public IEnumerator PlayMergePunch()
-{
-    Vector3 originalScale = transform.localScale;
-    Vector3 targetScale = originalScale * mergePunchScale;
-
-    float timer = 0f;
-
-    // Büyüme
-    while (timer < mergePunchDuration)
     {
-        timer += Time.deltaTime;
+        Vector3 original = transform.localScale;
+        Vector3 target   = original * mergePunchScale;
+        float timer = 0f;
 
-        float t = timer / mergePunchDuration;
+        while (timer < mergePunchDuration)
+        {
+            timer += Time.deltaTime;
+            transform.localScale = Vector3.Lerp(original, target, timer / mergePunchDuration);
+            yield return null;
+        }
 
-        transform.localScale = Vector3.Lerp(
-            originalScale,
-            targetScale,
-            t
-        );
+        transform.localScale = target;
+        timer = 0f;
 
-        yield return null;
+        while (timer < mergePunchDuration)
+        {
+            timer += Time.deltaTime;
+            transform.localScale = Vector3.Lerp(target, original, timer / mergePunchDuration);
+            yield return null;
+        }
+
+        transform.localScale = original;
     }
 
-    transform.localScale = targetScale;
+    // --- Visuals ---
 
-    timer = 0f;
-
-    // Küçülme
-    while (timer < mergePunchDuration)
+    private void UpdateVisual()
     {
-        timer += Time.deltaTime;
+        switch (TileType)
+        {
+            case TileType.Wild:
+                if (spriteRenderer != null) spriteRenderer.color = WildColor;
+                if (levelText != null)
+                {
+                    levelText.text  = "W";
+                    levelText.color = new Color(0.15f, 0.08f, 0f);
+                }
+                break;
 
-        float t = timer / mergePunchDuration;
+            case TileType.Bomb:
+                if (spriteRenderer != null) spriteRenderer.color = BombColor;
+                if (levelText != null)
+                {
+                    levelText.text  = "B";
+                    levelText.color = Color.white;
+                }
+                break;
 
-        transform.localScale = Vector3.Lerp(
-            targetScale,
-            originalScale,
-            t
-        );
-
-        yield return null;
+            default:
+                if (levelText != null)
+                {
+                    levelText.text  = Level.ToString();
+                    levelText.color = Color.white;
+                }
+                if (spriteRenderer != null)
+                {
+                    int idx = Mathf.Clamp(Level - 1, 0, LevelColors.Length - 1);
+                    spriteRenderer.color = LevelColors[idx];
+                }
+                break;
+        }
     }
-
-    transform.localScale = originalScale;
-}
 }
