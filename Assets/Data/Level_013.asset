@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fee1a8fb4f0634640a63795364d3b5e7, type: 3}
+  m_Name: Level_013
+  m_EditorClassIdentifier: Assembly-CSharp::LevelData
+  levelIndex: 13
+  gridWidth: 6
+  gridHeight: 6
+  moveLimit: 18
+  targetScore: 1900
+  initialTiles:
+  - x: 0
+    y: 0
+    level: 1
+  - x: 1
+    y: 0
+    level: 1
+  - x: 4
+    y: 0
+    level: 2
+  - x: 4
+    y: 3
+    level: 3
+  - x: 1
+    y: 4
+    level: 4
+  blockedCells:
+  - x: 2
+    y: 1
+  - x: 2
+    y: 2
+  - x: 3
+    y: 2
+  - x: 4
+    y: 2
+  enableAutoSpawn: 1
+  spawnAfterMergeCount: 1
+  spawnableTileLevels: 01000000010000000200000002000000
