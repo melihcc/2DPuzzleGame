@@ -15,17 +15,21 @@ public class GameManager : MonoBehaviour
 
     [Header("Combo")]
     public int   comboCount;
-    public float maxComboTime = 5f;
+    public float maxComboTime       = 1.5f;
+    public int   maxComboMultiplier = 3;
 
-    public bool IsGameOver { get; private set; }
+    public bool IsGameOver      { get; private set; }
+    public bool IsAnyTileMoving { get; private set; }
+
+    public void SetTileMoving(bool moving) { IsAnyTileMoving = moving; }
 
     // ─── Private state ────────────────────────────────────────────────────────
 
     private float lastMergeTime;
     private int   mergeCounter;
-
-    private int remainingHints;
-    private int remainingUndos;
+    private int   remainingHints;
+    private int   remainingUndos;
+    private int   lastShownStars = 0;
 
     private Tile hintSourceTile;
     private Tile hintTargetTile;
@@ -58,6 +62,7 @@ public class GameManager : MonoBehaviour
         remainingMoves = levelManager.MoveLimit;
         IsGameOver     = false;
         undoSnapshot   = null;
+        lastShownStars = 0;
 
         remainingHints = levelManager.CurrentLevel.hintCount;
         remainingUndos = levelManager.CurrentLevel.undoCount;
@@ -72,6 +77,7 @@ public class GameManager : MonoBehaviour
         gameplayUI.UpdateMoves(remainingMoves);
         gameplayUI.UpdateHints(remainingHints);
         gameplayUI.UpdateUndos(remainingUndos);
+        gameplayUI.UpdateLiveStars(0, levelManager.CurrentLevel);
     }
 
     // ─── Level flow ───────────────────────────────────────────────────────────
@@ -88,12 +94,9 @@ public class GameManager : MonoBehaviour
         StartLevel();
     }
 
-    public void ResetProgressToFirstLevel()
+    public void GoToLevelSelect()
     {
-        PlayerPrefs.SetInt("CurrentLevelArrayIndex", 0);
-        PlayerPrefs.Save();
-        levelManager.LoadLevel(0);
-        StartLevel();
+        SceneLoader.LoadLevelSelect();
     }
 
     // ─── Combo ───────────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ public class GameManager : MonoBehaviour
     public int GetComboMultiplier()
     {
         if (Time.time - lastMergeTime <= maxComboTime)
-            comboCount++;
+            comboCount = Mathf.Min(comboCount + 1, maxComboMultiplier);
         else
             comboCount = 1;
 
@@ -113,7 +116,7 @@ public class GameManager : MonoBehaviour
 
     public bool HasEnoughMoves(int moveCost) => remainingMoves >= moveCost;
 
-    public void RegisterMove()   => RegisterMoves(1);
+    public void RegisterMove() => RegisterMoves(1);
 
     public void RegisterMoves(int moveAmount)
     {
@@ -126,23 +129,13 @@ public class GameManager : MonoBehaviour
         CheckGameState();
     }
 
-    public void AddScore(int amount)
-    {
-        if (IsGameOver) return;
-
-        currentScore += amount;
-        gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
-        CheckGameState();
-    }
-
     public void RegisterMergeResult(int moveCost, int scoreAmount, Vector3 mergeWorldPos)
     {
         if (IsGameOver) return;
 
-        int comboMultiplier = GetComboMultiplier();
-
-        // Gerçek çarpan: x1, x2, x3...
-        int finalScore = scoreAmount * comboMultiplier;
+        int   comboMultiplier = GetComboMultiplier();
+        float bonusRate       = (comboMultiplier - 1) * 0.25f;
+        int   finalScore      = Mathf.RoundToInt(scoreAmount * (1f + bonusRate));
 
         remainingMoves -= moveCost;
         if (remainingMoves < 0) remainingMoves = 0;
@@ -152,27 +145,47 @@ public class GameManager : MonoBehaviour
         gameplayUI.UpdateMoves(remainingMoves);
         gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
 
-        // Floating score text
-        Color textColor = comboMultiplier > 1
-            ? new Color(1f, 0.85f, 0f)
-            : Color.white;
-
-        string label = comboMultiplier > 1
-            ? $"+{finalScore} x{comboMultiplier}!"
-            : $"+{finalScore}";
-
+        // Floating score
+        Color  textColor = comboMultiplier > 1 ? new Color(1f, 0.85f, 0f) : Color.white;
+        string label     = comboMultiplier > 1 ? $"+{finalScore} x{comboMultiplier}!" : $"+{finalScore}";
         FloatingText.Spawn(mergeWorldPos, label, textColor);
 
         if (comboMultiplier > 1)
             gameplayUI.ShowCombo(comboMultiplier);
 
+        // Canlı yıldız güncellemesi
+        UpdateLiveStars();
+
         CheckGameState();
     }
 
-    // Overload for backward compat with callers that don't have world pos yet
     public void RegisterMergeResult(int moveCost, int scoreAmount)
+        => RegisterMergeResult(moveCost, scoreAmount, Vector3.zero);
+
+    // ─── Live stars ───────────────────────────────────────────────────────────
+
+    private void UpdateLiveStars()
     {
-        RegisterMergeResult(moveCost, scoreAmount, Vector3.zero);
+        int stars = CalculateStars();
+        gameplayUI.UpdateLiveStars(stars, levelManager.CurrentLevel);
+
+        if (stars > lastShownStars)
+        {
+            lastShownStars = stars;
+            gameplayUI.ShowStarEarned(stars);
+        }
+    }
+
+    // ─── Finish (oyuncu manuel bitirir) ──────────────────────────────────────
+
+    public void FinishLevel()
+    {
+        if (IsGameOver) return;
+
+        if (currentScore >= levelManager.TargetScore)
+            WinLevel();
+        else
+            LoseLevel();
     }
 
     // ─── Auto-spawn ───────────────────────────────────────────────────────────
@@ -192,10 +205,8 @@ public class GameManager : MonoBehaviour
         int      spawnLevel = GetRandomSpawnLevel();
         TileType spawnType  = GetRandomSpawnType();
 
-        bool spawned = gridManager.SpawnRandomTile(spawnLevel, spawnType);
-
-        if (!spawned)
-            Debug.Log("No empty cell available for auto spawn.");
+        if (!gridManager.SpawnRandomTile(spawnLevel, spawnType))
+            Debug.Log("No empty cell for auto spawn.");
     }
 
     private int GetRandomSpawnLevel()
@@ -216,18 +227,12 @@ public class GameManager : MonoBehaviour
 
     public void UseHint()
     {
-        if (remainingHints <= 0 || IsGameOver)
-            return;
+        if (remainingHints <= 0 || IsGameOver) return;
 
         ClearHints();
-
         (GridCell source, GridCell target) = FindBestMergePair();
 
-        if (source == null)
-        {
-            Debug.Log("Hint: Merge pair bulunamadı.");
-            return;
-        }
+        if (source == null) return;
 
         remainingHints--;
         gameplayUI.UpdateHints(remainingHints);
@@ -248,52 +253,41 @@ public class GameManager : MonoBehaviour
     private (GridCell, GridCell) FindBestMergePair()
     {
         GridCell[,] allCells = gridManager.GetAllCells();
-        GridCell bestSource = null;
-        GridCell bestTarget = null;
-        int  bestLevel      = -1;
-        int  bestPathLen    = int.MaxValue;
+        GridCell bestSource = null, bestTarget = null;
+        int bestLevel = -1, bestPathLen = int.MaxValue;
 
         for (int x = 0; x < allCells.GetLength(0); x++)
+        for (int y = 0; y < allCells.GetLength(1); y++)
         {
-            for (int y = 0; y < allCells.GetLength(1); y++)
+            GridCell cell = allCells[x, y];
+            if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
+            Tile tile = cell.CurrentTile;
+
+            for (int tx = 0; tx < allCells.GetLength(0); tx++)
+            for (int ty = 0; ty < allCells.GetLength(1); ty++)
             {
-                GridCell cell = allCells[x, y];
-                if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
+                GridCell targetCell = allCells[tx, ty];
+                if (targetCell == null || targetCell.IsBlocked || targetCell.IsEmpty) continue;
+                if (targetCell == cell) continue;
 
-                Tile tile = cell.CurrentTile;
+                Tile targetTile = targetCell.CurrentTile;
+                bool canMerge = tile.Level == targetTile.Level
+                    || tile.TileType       == TileType.Wild
+                    || targetTile.TileType == TileType.Wild
+                    || tile.TileType       == TileType.Bomb
+                    || targetTile.TileType == TileType.Bomb;
 
-                for (int tx = 0; tx < allCells.GetLength(0); tx++)
+                if (!canMerge) continue;
+
+                List<GridCell> path = pathfinder.FindPath(cell, targetCell);
+                if (path == null || path.Count == 0) continue;
+                if (!HasEnoughMoves(path.Count)) continue;
+
+                int mergeLevel = Mathf.Max(tile.Level, targetTile.Level);
+                if (mergeLevel > bestLevel || (mergeLevel == bestLevel && path.Count < bestPathLen))
                 {
-                    for (int ty = 0; ty < allCells.GetLength(1); ty++)
-                    {
-                        GridCell targetCell = allCells[tx, ty];
-                        if (targetCell == null || targetCell.IsBlocked || targetCell.IsEmpty) continue;
-                        if (targetCell == cell) continue;
-
-                        Tile targetTile = targetCell.CurrentTile;
-
-                        bool canMerge = tile.Level == targetTile.Level
-                            || tile.TileType       == TileType.Wild
-                            || targetTile.TileType == TileType.Wild
-                            || tile.TileType       == TileType.Bomb
-                            || targetTile.TileType == TileType.Bomb;
-
-                        if (!canMerge) continue;
-
-                        List<GridCell> path = pathfinder.FindPath(cell, targetCell);
-                        if (path == null || path.Count == 0) continue;
-                        if (!HasEnoughMoves(path.Count)) continue;
-
-                        int mergeLevel = Mathf.Max(tile.Level, targetTile.Level);
-
-                        if (mergeLevel > bestLevel || (mergeLevel == bestLevel && path.Count < bestPathLen))
-                        {
-                            bestLevel   = mergeLevel;
-                            bestPathLen = path.Count;
-                            bestSource  = cell;
-                            bestTarget  = targetCell;
-                        }
-                    }
+                    bestLevel = mergeLevel; bestPathLen = path.Count;
+                    bestSource = cell; bestTarget = targetCell;
                 }
             }
         }
@@ -318,20 +312,17 @@ public class GameManager : MonoBehaviour
 
     public void UndoLastMove()
     {
-        if (!undoSnapshot.HasValue || remainingUndos <= 0 || IsGameOver)
-            return;
+        if (!undoSnapshot.HasValue || remainingUndos <= 0 || IsGameOver) return;
 
         ClearHints();
-
         GameSnapshot snap = undoSnapshot.Value;
 
         gridManager.RespawnFromStates(snap.tiles);
-
-        currentScore  = snap.score;
+        currentScore   = snap.score;
         remainingMoves = snap.moves;
-        comboCount    = snap.combo;
-        lastMergeTime = snap.lastMergeTime;
-        mergeCounter  = snap.mergeCounter;
+        comboCount     = snap.combo;
+        lastMergeTime  = snap.lastMergeTime;
+        mergeCounter   = snap.mergeCounter;
 
         undoSnapshot = null;
         remainingUndos--;
@@ -339,27 +330,31 @@ public class GameManager : MonoBehaviour
         gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
         gameplayUI.UpdateMoves(remainingMoves);
         gameplayUI.UpdateUndos(remainingUndos);
+        UpdateLiveStars();
     }
 
     // ─── Game state check ─────────────────────────────────────────────────────
 
     private void CheckGameState()
     {
-        if (currentScore >= levelManager.TargetScore)
-        {
-            WinLevel();
-            return;
-        }
+        // Skor yeterli olsa bile oyun BİTMEZ — oyuncu devam edebilir veya "Bitir" der
+        // Oyun sadece hamle bitince veya merge kalmayınca biter
 
         if (remainingMoves <= 0)
         {
-            LoseLevel();
+            if (currentScore >= levelManager.TargetScore)
+                WinLevel();
+            else
+                LoseLevel();
             return;
         }
 
         if (!HasAnyPossibleMerge())
         {
-            LoseLevel();
+            if (currentScore >= levelManager.TargetScore)
+                WinLevel();
+            else
+                LoseLevel();
             return;
         }
     }
@@ -367,53 +362,37 @@ public class GameManager : MonoBehaviour
     private bool HasAnyPossibleMerge()
     {
         GridCell[,] allCells = gridManager.GetAllCells();
-
         bool hasSpecialTile = false;
         int  totalTiles     = 0;
 
         for (int x = 0; x < allCells.GetLength(0); x++)
+        for (int y = 0; y < allCells.GetLength(1); y++)
         {
-            for (int y = 0; y < allCells.GetLength(1); y++)
-            {
-                GridCell cell = allCells[x, y];
-                if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
-
-                totalTiles++;
-
-                TileType t = cell.CurrentTile.TileType;
-                if (t == TileType.Wild || t == TileType.Bomb)
-                    hasSpecialTile = true;
-            }
+            GridCell cell = allCells[x, y];
+            if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
+            totalTiles++;
+            TileType t = cell.CurrentTile.TileType;
+            if (t == TileType.Wild || t == TileType.Bomb) hasSpecialTile = true;
         }
 
-        // Wild/Bomb her tile ile merge olabilir
-        if (hasSpecialTile && totalTiles >= 2)
-            return true;
+        if (hasSpecialTile && totalTiles >= 2) return true;
 
-        // Normal kontrol: aynı level'dan iki tile
         for (int x = 0; x < allCells.GetLength(0); x++)
+        for (int y = 0; y < allCells.GetLength(1); y++)
         {
-            for (int y = 0; y < allCells.GetLength(1); y++)
+            GridCell cell = allCells[x, y];
+            if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
+            if (cell.CurrentTile.TileType != TileType.Normal) continue;
+            Tile tile = cell.CurrentTile;
+
+            for (int tx = 0; tx < allCells.GetLength(0); tx++)
+            for (int ty = 0; ty < allCells.GetLength(1); ty++)
             {
-                GridCell cell = allCells[x, y];
-                if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
-                if (cell.CurrentTile.TileType != TileType.Normal) continue;
-
-                Tile tile = cell.CurrentTile;
-
-                for (int tx = 0; tx < allCells.GetLength(0); tx++)
-                {
-                    for (int ty = 0; ty < allCells.GetLength(1); ty++)
-                    {
-                        GridCell targetCell = allCells[tx, ty];
-                        if (targetCell == null || targetCell.IsBlocked || targetCell.IsEmpty) continue;
-                        if (targetCell == cell) continue;
-                        if (targetCell.CurrentTile.TileType != TileType.Normal) continue;
-
-                        if (targetCell.CurrentTile.Level == tile.Level)
-                            return true;
-                    }
-                }
+                GridCell targetCell = allCells[tx, ty];
+                if (targetCell == null || targetCell.IsBlocked || targetCell.IsEmpty) continue;
+                if (targetCell == cell) continue;
+                if (targetCell.CurrentTile.TileType != TileType.Normal) continue;
+                if (targetCell.CurrentTile.Level == tile.Level) return true;
             }
         }
 
@@ -428,7 +407,7 @@ public class GameManager : MonoBehaviour
         ClearHints();
 
         int stars = CalculateStars();
-        SaveStars(stars);
+        SaveProgress(stars);
 
         gameplayUI.ShowWinPanel(stars);
     }
@@ -440,28 +419,37 @@ public class GameManager : MonoBehaviour
         gameplayUI.ShowGameOverPanel();
     }
 
-    private int CalculateStars()
+    // ─── Stars & Progress ─────────────────────────────────────────────────────
+
+    public int CalculateStars()
     {
         LevelData level = levelManager.CurrentLevel;
 
-        if (level.starThreshold3 > 0 && currentScore >= level.starThreshold3)
-            return 3;
-
-        if (level.starThreshold2 > 0 && currentScore >= level.starThreshold2)
-            return 2;
-
-        return 1;
+        if (level.starThreshold3 > 0 && currentScore >= level.starThreshold3) return 3;
+        if (level.starThreshold2 > 0 && currentScore >= level.starThreshold2) return 2;
+        if (currentScore >= level.targetScore) return 1;
+        return 0;
     }
 
-    private void SaveStars(int stars)
+    private void SaveProgress(int stars)
     {
-        string key    = $"Stars_{levelManager.CurrentLevelArrayIndex}";
-        int    saved  = PlayerPrefs.GetInt(key, 0);
+        int idx = levelManager.CurrentLevelArrayIndex;
 
+        // Yıldız kaydet (sadece daha iyiyse)
+        string key   = $"Stars_{idx}";
+        int    saved = PlayerPrefs.GetInt(key, 0);
         if (stars > saved)
-        {
             PlayerPrefs.SetInt(key, stars);
-            PlayerPrefs.Save();
+
+        // Sonraki leveli aç
+        if (stars > 0)
+        {
+            int highest = PlayerPrefs.GetInt("HighestUnlockedLevel", 0);
+            int next    = idx + 1;
+            if (next > highest)
+                PlayerPrefs.SetInt("HighestUnlockedLevel", next);
         }
+
+        PlayerPrefs.Save();
     }
 }

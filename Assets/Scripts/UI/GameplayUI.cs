@@ -12,15 +12,25 @@ public class GameplayUI : MonoBehaviour
     public TMP_Text hintsText;
     public TMP_Text undosText;
 
+    [Header("Live Stars (HUD - oyun sırasında)")]
+    public Image liveStar1;
+    public Image liveStar2;
+    public Image liveStar3;
+
+    [Header("Star Earned Popup")]
+    public TMP_Text starEarnedText;
+
     [Header("Panels")]
     public GameObject winPanel;
     public GameObject gameOverPanel;
 
-    [Header("Win Panel")]
-    [Tooltip("Win panel'deki yıldız metni (örn: ★★☆)")]
-    public TMP_Text starsText;
-    [Tooltip("Win panel'deki skor özet metni")]
-    public TMP_Text winScoreText;
+    [Header("Win Panel - Yıldızlar")]
+    public Image star1Image;
+    public Image star2Image;
+    public Image star3Image;
+
+    private static readonly Color StarActiveColor   = new Color(1f, 0.84f, 0f);   // Altın
+    private static readonly Color StarInactiveColor = new Color(0.3f, 0.3f, 0.3f); // Gri
 
     [Header("Combo")]
     public TMP_Text comboText;
@@ -31,6 +41,7 @@ public class GameplayUI : MonoBehaviour
 
     private Coroutine comboCoroutine;
     private Coroutine flashCoroutine;
+    private Coroutine starEarnedCoroutine;
     private int currentRemainingMoves;
 
     // ─── Level / Score / Moves ───────────────────────────────────────────────
@@ -80,6 +91,63 @@ public class GameplayUI : MonoBehaviour
             undosText.text = $"Undo: {remaining}";
     }
 
+    // ─── Live Stars (HUD) ─────────────────────────────────────────────────────
+
+    public void UpdateLiveStars(int stars, LevelData level)
+    {
+        SetStarColor(liveStar1, stars >= 1);
+        SetStarColor(liveStar2, stars >= 2);
+        SetStarColor(liveStar3, stars >= 3);
+    }
+
+    public void ShowStarEarned(int stars)
+    {
+        if (starEarnedText == null) return;
+
+        if (starEarnedCoroutine != null)
+            StopCoroutine(starEarnedCoroutine);
+
+        starEarnedCoroutine = StartCoroutine(StarEarnedRoutine(stars));
+    }
+
+    private IEnumerator StarEarnedRoutine(int stars)
+    {
+        string starStr = stars == 1 ? "⭐" : stars == 2 ? "⭐⭐" : "⭐⭐⭐";
+        starEarnedText.text  = $"{starStr} New Star!";
+        starEarnedText.color = new Color(1f, 0.9f, 0f, 1f);
+        starEarnedText.gameObject.SetActive(true);
+
+        // Pop in
+        starEarnedText.transform.localScale = Vector3.zero;
+        float timer = 0f;
+        while (timer < 0.25f)
+        {
+            timer += Time.deltaTime;
+            float t     = timer / 0.25f;
+            float scale = t < 0.7f
+                ? Mathf.LerpUnclamped(0f, 1.2f, t / 0.7f)
+                : Mathf.LerpUnclamped(1.2f, 1f, (t - 0.7f) / 0.3f);
+            starEarnedText.transform.localScale = Vector3.one * scale;
+            yield return null;
+        }
+        starEarnedText.transform.localScale = Vector3.one;
+
+        yield return new WaitForSeconds(0.9f);
+
+        // Fade out
+        timer = 0f;
+        while (timer < 0.3f)
+        {
+            timer += Time.deltaTime;
+            float a = Mathf.Lerp(1f, 0f, timer / 0.3f);
+            starEarnedText.color = new Color(1f, 0.9f, 0f, a);
+            yield return null;
+        }
+
+        starEarnedText.gameObject.SetActive(false);
+        starEarnedCoroutine = null;
+    }
+
     // ─── Panels ───────────────────────────────────────────────────────────────
 
     public void ShowWinPanel(int stars = 1)
@@ -87,8 +155,7 @@ public class GameplayUI : MonoBehaviour
         if (winPanel != null)
             winPanel.SetActive(true);
 
-        if (starsText != null)
-            starsText.text = BuildStarString(stars);
+        UpdateStarImages(stars);
     }
 
     public void ShowGameOverPanel()
@@ -99,19 +166,21 @@ public class GameplayUI : MonoBehaviour
 
     public void HidePanels()
     {
-        if (winPanel     != null) winPanel.SetActive(false);
+        if (winPanel      != null) winPanel.SetActive(false);
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
     }
 
-    private string BuildStarString(int stars)
+    private void UpdateStarImages(int stars)
     {
-        return stars switch
-        {
-            1 => "★☆☆",
-            2 => "★★☆",
-            3 => "★★★",
-            _ => "☆☆☆"
-        };
+        SetStarColor(star1Image, stars >= 1);
+        SetStarColor(star2Image, stars >= 2);
+        SetStarColor(star3Image, stars >= 3);
+    }
+
+    private void SetStarColor(Image img, bool active)
+    {
+        if (img == null) return;
+        img.color = active ? StarActiveColor : StarInactiveColor;
     }
 
     // ─── Combo ────────────────────────────────────────────────────────────────
@@ -133,7 +202,7 @@ public class GameplayUI : MonoBehaviour
 
     private Color GetComboFlashColor(int multiplier)
     {
-        if (multiplier >= 5) return new Color(1f, 0.2f, 0.2f, 0.3f); // kırmızı
+        if (multiplier >= 5) return new Color(1f, 0.2f, 0.2f, 0.3f);  // kırmızı
         if (multiplier >= 4) return new Color(1f, 0.5f, 0f,   0.25f); // turuncu
         return new Color(1f, 0.9f, 0f, 0.2f);                          // sarı
     }
@@ -141,7 +210,7 @@ public class GameplayUI : MonoBehaviour
     private IEnumerator ShowComboRoutine(int comboMultiplier)
     {
         comboText.gameObject.SetActive(true);
-        comboText.text = $"COMBO x{comboMultiplier}!";
+        comboText.text  = $"COMBO x{comboMultiplier}!";
         comboText.color = GetComboTextColor(comboMultiplier);
 
         Vector3 originalScale = Vector3.one;
@@ -155,7 +224,6 @@ public class GameplayUI : MonoBehaviour
             timer += Time.deltaTime;
             float t = timer / duration;
 
-            // Overshoot
             float scale = t < 0.7f
                 ? Mathf.LerpUnclamped(0f, 1.15f, t / 0.7f)
                 : Mathf.LerpUnclamped(1.15f, 1f, (t - 0.7f) / 0.3f);
@@ -183,8 +251,7 @@ public class GameplayUI : MonoBehaviour
 
     private void TriggerScreenFlash(Color color)
     {
-        if (screenFlashImage == null)
-            return;
+        if (screenFlashImage == null) return;
 
         if (flashCoroutine != null)
             StopCoroutine(flashCoroutine);
@@ -197,8 +264,8 @@ public class GameplayUI : MonoBehaviour
         screenFlashImage.gameObject.SetActive(true);
         screenFlashImage.color = color;
 
-        float duration = 0.35f;
-        float timer    = 0f;
+        float duration  = 0.35f;
+        float timer     = 0f;
         float peakAlpha = color.a;
 
         while (timer < duration)
