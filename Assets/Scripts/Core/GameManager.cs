@@ -100,6 +100,17 @@ public class GameManager : MonoBehaviour
         SceneLoader.LoadLevelSelect();
     }
 
+    /// <summary>
+    /// Test için: tüm PlayerPrefs'i siler, 1. levelden başlar.
+    /// </summary>
+    public void ResetAllProgress()
+    {
+        PlayerPrefs.DeleteAll();
+        PlayerPrefs.Save();
+        levelManager.LoadLevel(0);
+        StartLevel();
+    }
+
     // ─── Combo ───────────────────────────────────────────────────────────────
 
     public int GetComboMultiplier()
