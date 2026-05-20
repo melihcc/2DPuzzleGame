@@ -54,9 +54,9 @@ public class LevelSelectManager : MonoBehaviour
             contentRect.anchorMax        = new Vector2(0.5f, 1f);
             contentRect.pivot            = new Vector2(0.5f, 1f);
             contentRect.anchoredPosition = Vector2.zero;
-            // Genişlik: zigzag + node boyutu için 700px yeterli
-            // Yükseklik: tüm node'lar + üst/alt padding
-            float totalHeight = totalLevels * nodeSpacingY + nodeSpacingY;
+            // Son node'un viewport dışında kalmaması için ekstra boşluk ekliyoruz.
+            // Viewport yüksekliği bilinmediğinden güvenli tarafta kalıyoruz (2200px).
+            float totalHeight = totalLevels * nodeSpacingY + 2200f;
             contentRect.sizeDelta = new Vector2(700f, totalHeight);
         }
 
@@ -66,14 +66,16 @@ public class LevelSelectManager : MonoBehaviour
 
             // Çift index → sol, tek → sağ
             float xOffset = (i % 2 == 0) ? -zigzagOffsetX : zigzagOffsetX;
-            // Pivot en üstte: Y negatife gider
+            // Node anchor → Content'in TOP'una göre, Y negatife gider
             float yOffset = -(i * nodeSpacingY + nodeSpacingY * 0.5f);
 
             RectTransform rt = nodeObj.GetComponent<RectTransform>();
             if (rt != null)
             {
-                rt.anchorMin        = new Vector2(0.5f, 0.5f);
-                rt.anchorMax        = new Vector2(0.5f, 0.5f);
+                // anchorMin/Max TOP → Y=-100, Content'in tepesinden 100px aşağısı
+                // (Center anchor olsaydı Content'in ORTASINDAN 100px aşağısı olurdu)
+                rt.anchorMin        = new Vector2(0.5f, 1f);
+                rt.anchorMax        = new Vector2(0.5f, 1f);
                 rt.pivot            = new Vector2(0.5f, 0.5f);
                 rt.anchoredPosition = new Vector2(xOffset, yOffset);
             }
