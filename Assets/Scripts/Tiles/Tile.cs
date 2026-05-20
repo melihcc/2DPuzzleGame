@@ -13,6 +13,9 @@ public class Tile : MonoBehaviour
     public SpriteRenderer wildIconRenderer;
     public SpriteRenderer bombIconRenderer;
 
+    [Header("Gradient Overlay (opsiyonel — tile üzerindeki parlaklık efekti)")]
+    public SpriteRenderer gradientOverlayRenderer;
+
     [Header("Movement")]
     public float moveSpeed = 8f;
 
@@ -42,8 +45,10 @@ public class Tile : MonoBehaviour
         new Color(0.96f, 0.38f, 0.57f), // 8 - Pembe
     };
 
-    private static readonly Color WildColor  = new Color(1.00f, 0.85f, 0.00f); // Altın
-    private static readonly Color BombColor  = new Color(0.22f, 0.22f, 0.28f); // Koyu antrasit
+    private static readonly Color WildColor  = new Color(1.00f, 0.85f, 0.00f);  // Altın
+    private static readonly Color BombColor  = new Color(0.22f, 0.22f, 0.28f);  // Koyu antrasit
+    private static readonly Color TextDark   = new Color(0.102f, 0.102f, 0.180f); // #1A1A2E
+    private static readonly Color GradientOverlay = new Color(1f, 1f, 1f, 0.20f); // white/20
 
     private void Awake()
     {
@@ -159,6 +164,27 @@ public class Tile : MonoBehaviour
             c.a = alpha;
             levelText.color = c;
         }
+
+        if (gradientOverlayRenderer != null)
+        {
+            Color c = gradientOverlayRenderer.color;
+            c.a = GradientOverlay.a * alpha;
+            gradientOverlayRenderer.color = c;
+        }
+
+        if (wildIconRenderer != null)
+        {
+            Color c = wildIconRenderer.color;
+            c.a = alpha;
+            wildIconRenderer.color = c;
+        }
+
+        if (bombIconRenderer != null)
+        {
+            Color c = bombIconRenderer.color;
+            c.a = alpha;
+            bombIconRenderer.color = c;
+        }
     }
 
     // --- Hint pulse ---
@@ -228,9 +254,9 @@ public class Tile : MonoBehaviour
         {
             case TileType.Wild:
                 if (spriteRenderer != null) spriteRenderer.color = WildColor;
+                if (gradientOverlayRenderer != null) gradientOverlayRenderer.color = GradientOverlay;
                 if (wildIconRenderer != null)
                 {
-                    // Sprite atandıysa ikonu göster, metni gizle
                     wildIconRenderer.gameObject.SetActive(true);
                     if (levelText != null) levelText.gameObject.SetActive(false);
                 }
@@ -238,13 +264,14 @@ public class Tile : MonoBehaviour
                 {
                     levelText.gameObject.SetActive(true);
                     levelText.text  = "W";
-                    levelText.color = new Color(0.15f, 0.08f, 0f);
+                    levelText.color = TextDark;
                 }
                 if (bombIconRenderer != null) bombIconRenderer.gameObject.SetActive(false);
                 break;
 
             case TileType.Bomb:
                 if (spriteRenderer != null) spriteRenderer.color = BombColor;
+                if (gradientOverlayRenderer != null) gradientOverlayRenderer.color = GradientOverlay;
                 if (bombIconRenderer != null)
                 {
                     bombIconRenderer.gameObject.SetActive(true);
@@ -264,13 +291,16 @@ public class Tile : MonoBehaviour
                 {
                     levelText.gameObject.SetActive(true);
                     levelText.text  = Level.ToString();
-                    levelText.color = Color.white;
+                    // Figma tasarımıyla aynı: koyu navy metin (#1A1A2E)
+                    levelText.color = TextDark;
                 }
                 if (spriteRenderer != null)
                 {
                     int idx = Mathf.Clamp(Level - 1, 0, LevelColors.Length - 1);
                     spriteRenderer.color = LevelColors[idx];
                 }
+                // Gradient overlay — sprite atanmışsa uygula
+                if (gradientOverlayRenderer != null) gradientOverlayRenderer.color = GradientOverlay;
                 if (wildIconRenderer != null) wildIconRenderer.gameObject.SetActive(false);
                 if (bombIconRenderer != null) bombIconRenderer.gameObject.SetActive(false);
                 break;
