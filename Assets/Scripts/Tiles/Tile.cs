@@ -250,6 +250,13 @@ public class Tile : MonoBehaviour
 
     private void UpdateVisual()
     {
+        // Mobil GPU batching'de aynı Sorting Order'daki sprite'lar rastgele sıralanır.
+        // Icon'ların her zaman tile'ın üstünde render edilmesi için explicit order set ediyoruz.
+        int baseOrder = spriteRenderer != null ? spriteRenderer.sortingOrder : 0;
+        if (gradientOverlayRenderer != null) gradientOverlayRenderer.sortingOrder = baseOrder + 1;
+        if (wildIconRenderer  != null)       wildIconRenderer.sortingOrder        = baseOrder + 2;
+        if (bombIconRenderer  != null)       bombIconRenderer.sortingOrder        = baseOrder + 2;
+
         switch (TileType)
         {
             case TileType.Wild:
