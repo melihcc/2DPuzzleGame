@@ -367,27 +367,12 @@ public class GameManager : MonoBehaviour
     private bool HasAnyPossibleMerge()
     {
         GridCell[,] allCells = gridManager.GetAllCells();
-        bool hasSpecialTile = false;
-        int  totalTiles     = 0;
 
         for (int x = 0; x < allCells.GetLength(0); x++)
         for (int y = 0; y < allCells.GetLength(1); y++)
         {
             GridCell cell = allCells[x, y];
             if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
-            totalTiles++;
-            TileType t = cell.CurrentTile.TileType;
-            if (t == TileType.Wild || t == TileType.Bomb) hasSpecialTile = true;
-        }
-
-        if (hasSpecialTile && totalTiles >= 2) return true;
-
-        for (int x = 0; x < allCells.GetLength(0); x++)
-        for (int y = 0; y < allCells.GetLength(1); y++)
-        {
-            GridCell cell = allCells[x, y];
-            if (cell == null || cell.IsBlocked || cell.IsEmpty) continue;
-            if (cell.CurrentTile.TileType != TileType.Normal) continue;
             Tile tile = cell.CurrentTile;
 
             for (int tx = 0; tx < allCells.GetLength(0); tx++)
@@ -396,8 +381,21 @@ public class GameManager : MonoBehaviour
                 GridCell targetCell = allCells[tx, ty];
                 if (targetCell == null || targetCell.IsBlocked || targetCell.IsEmpty) continue;
                 if (targetCell == cell) continue;
-                if (targetCell.CurrentTile.TileType != TileType.Normal) continue;
-                if (targetCell.CurrentTile.Level == tile.Level) return true;
+
+                Tile targetTile = targetCell.CurrentTile;
+
+                bool canMerge = tile.Level == targetTile.Level
+                    || tile.TileType       == TileType.Wild
+                    || targetTile.TileType == TileType.Wild
+                    || tile.TileType       == TileType.Bomb
+                    || targetTile.TileType == TileType.Bomb;
+
+                if (!canMerge) continue;
+
+                // Gerçekten ulaşılabilir mi VE yeterli hamle var mı?
+                List<GridCell> path = pathfinder.FindPath(cell, targetCell);
+                if (path != null && path.Count > 0 && path.Count <= remainingMoves)
+                    return true;
             }
         }
 
