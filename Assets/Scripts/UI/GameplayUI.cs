@@ -96,6 +96,8 @@ public class GameplayUI : MonoBehaviour
 
     public void UpdateLiveStars(int stars, LevelData level)
     {
+        // Sahne geçişi sırasında obje yok edilmiş olabilir
+        if (this == null) return;
         SetStarColor(liveStar1, stars >= 1);
         SetStarColor(liveStar2, stars >= 2);
         SetStarColor(liveStar3, stars >= 3);
