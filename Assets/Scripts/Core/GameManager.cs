@@ -191,6 +191,10 @@ public class GameManager : MonoBehaviour
         {
             lastShownStars = stars;
             gameplayUI.ShowStarEarned(stars);
+
+            // 3 yıldıza ulaşıldığında oyun otomatik biter
+            if (stars >= 3)
+                WinLevel();
         }
     }
 
