@@ -79,7 +79,9 @@ public class GameButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler,
                 break;
 
             case Variant.Secondary:
-                // Transparent arka plan, gold border, gold metin
+                // Transparent arka plan, gold metin.
+                // Border için: Inspector'da outlineImage alanına ayrı bir Image bağla
+                // (Outline component OutOfMemoryException'a yol açtığı için kod ile eklenmez)
                 if (backgroundImage != null)
                     backgroundImage.color = Color.clear;
 
@@ -89,27 +91,10 @@ public class GameButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler,
                 if (label != null)
                     label.color = GoldText;
 
-                // Outline: ayrı Image varsa renklendir, yoksa Outline component kullan
                 if (outlineImage != null)
                 {
                     outlineImage.gameObject.SetActive(true);
                     outlineImage.color = PrimaryColor;
-                }
-                else
-                {
-                    // Outline component'ı ekle (yoksa)
-                    var outline = label != null
-                        ? label.GetComponent<Outline>()
-                        : GetComponentInChildren<Outline>();
-
-                    if (outline == null)
-                    {
-                        var uiOutline = backgroundImage != null
-                            ? backgroundImage.gameObject.AddComponent<Outline>()
-                            : gameObject.AddComponent<Outline>();
-                        uiOutline.effectColor    = PrimaryColor;
-                        uiOutline.effectDistance = new Vector2(2f, -2f);
-                    }
                 }
 
                 pressScale = 0.98f;
