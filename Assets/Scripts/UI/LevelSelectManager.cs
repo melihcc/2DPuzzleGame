@@ -2,11 +2,6 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Level Select sahnesini yönetir.
-/// Candy Crush tarzı zigzag düzeninde level node'larını oluşturur.
-/// Level 1 en üstte, en alta doğru devam eder.
-/// </summary>
 public class LevelSelectManager : MonoBehaviour
 {
     [Header("References")]
@@ -15,9 +10,7 @@ public class LevelSelectManager : MonoBehaviour
     public GameObject   levelNodePrefab;
 
     [Header("Layout")]
-    [Tooltip("Node'lar arasındaki dikey boşluk (px)")]
     public float nodeSpacingY  = 200f;
-    [Tooltip("Zigzag için sağa/sola offset (px)")]
     public float zigzagOffsetX = 160f;
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -25,8 +18,12 @@ public class LevelSelectManager : MonoBehaviour
     private IEnumerator Start()
     {
         BuildMap();
-        yield return null; // Layout hesaplanması için bir frame bekle
-        yield return null; // İki frame daha güvenli
+
+        // Canvas layout'un hesaplanması için 2 frame bekle
+        yield return null;
+        yield return null;
+
+        Canvas.ForceUpdateCanvases();
         ScrollToCurrentLevel();
     }
 
@@ -40,10 +37,16 @@ public class LevelSelectManager : MonoBehaviour
             return;
         }
 
+        // Manuel yerleştirme ile çakışan layout component'larını kaldır
+        var anyLayout  = nodesContainer.GetComponent<LayoutGroup>();
+        var sizeFitter = nodesContainer.GetComponent<ContentSizeFitter>();
+        if (anyLayout  != null) DestroyImmediate(anyLayout);
+        if (sizeFitter != null) DestroyImmediate(sizeFitter);
+
         int totalLevels     = levelManager.levels.Length;
         int highestUnlocked = PlayerPrefs.GetInt("HighestUnlockedLevel", 0);
 
-        // Content'i top-center, sabit boyutlu yap (koddan zorla)
+        // Content RectTransform'u top-center, sabit boyutlu yap
         RectTransform contentRect = nodesContainer.GetComponent<RectTransform>();
         if (contentRect != null)
         {
@@ -51,21 +54,29 @@ public class LevelSelectManager : MonoBehaviour
             contentRect.anchorMax        = new Vector2(0.5f, 1f);
             contentRect.pivot            = new Vector2(0.5f, 1f);
             contentRect.anchoredPosition = Vector2.zero;
-            contentRect.sizeDelta        = new Vector2(700f, totalLevels * nodeSpacingY + nodeSpacingY);
+            // Genişlik: zigzag + node boyutu için 700px yeterli
+            // Yükseklik: tüm node'lar + üst/alt padding
+            float totalHeight = totalLevels * nodeSpacingY + nodeSpacingY;
+            contentRect.sizeDelta = new Vector2(700f, totalHeight);
         }
 
         for (int i = 0; i < totalLevels; i++)
         {
             GameObject nodeObj = Instantiate(levelNodePrefab, nodesContainer);
 
-            // Zigzag: çift → sol, tek → sağ
+            // Çift index → sol, tek → sağ
             float xOffset = (i % 2 == 0) ? -zigzagOffsetX : zigzagOffsetX;
-            // Content'in pivot'u en üstte → Y değerleri negatife gider
+            // Pivot en üstte: Y negatife gider
             float yOffset = -(i * nodeSpacingY + nodeSpacingY * 0.5f);
 
             RectTransform rt = nodeObj.GetComponent<RectTransform>();
             if (rt != null)
+            {
+                rt.anchorMin        = new Vector2(0.5f, 0.5f);
+                rt.anchorMax        = new Vector2(0.5f, 0.5f);
+                rt.pivot            = new Vector2(0.5f, 0.5f);
                 rt.anchoredPosition = new Vector2(xOffset, yOffset);
+            }
 
             int  stars    = PlayerPrefs.GetInt($"Stars_{i}", 0);
             bool unlocked = i <= highestUnlocked;
@@ -83,20 +94,14 @@ public class LevelSelectManager : MonoBehaviour
         ScrollRect scrollRect = GetComponentInChildren<ScrollRect>();
         if (scrollRect == null) return;
 
-        Canvas.ForceUpdateCanvases();
-
         int totalLevels     = levelManager.levels.Length;
         int highestUnlocked = PlayerPrefs.GetInt("HighestUnlockedLevel", 0);
 
-        if (totalLevels <= 1)
-        {
-            scrollRect.verticalNormalizedPosition = 1f;
-            return;
-        }
+        // 1 = en üst (Level 1 görünür), 0 = en alt (son level görünür)
+        float t = totalLevels <= 1
+            ? 1f
+            : 1f - (float)highestUnlocked / (totalLevels - 1);
 
-        // normalizedPosition: 1 = en üst (Level 1), 0 = en alt (son level)
-        // Oyuncunun en son kilidi açık leveli görünür olsun
-        float t = 1f - (float)highestUnlocked / (totalLevels - 1);
         scrollRect.verticalNormalizedPosition = Mathf.Clamp01(t);
     }
 }
