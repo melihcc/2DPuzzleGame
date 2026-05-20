@@ -189,6 +189,22 @@ public class GameplayUI : MonoBehaviour
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
     }
 
+    /// <summary>
+    /// Yeni level başlarken önceki levelden kalan tüm popup'ları temizler.
+    /// </summary>
+    public void CancelAllPopups()
+    {
+        if (comboCoroutine != null)      { StopCoroutine(comboCoroutine);      comboCoroutine = null; }
+        if (starEarnedCoroutine != null) { StopCoroutine(starEarnedCoroutine); starEarnedCoroutine = null; }
+        if (flashCoroutine != null)      { StopCoroutine(flashCoroutine);      flashCoroutine = null; }
+
+        if (comboText != null)        { comboText.gameObject.SetActive(false); comboText.transform.localScale = Vector3.one; }
+        if (starEarnedText != null)   { starEarnedText.gameObject.SetActive(false); starEarnedText.transform.localScale = Vector3.one; }
+        if (screenFlashImage != null) { screenFlashImage.gameObject.SetActive(false); }
+
+        nextPopupTime = 0f;
+    }
+
     private void UpdateStarImages(int stars)
     {
         SetStarColor(star1Image, stars >= 1);

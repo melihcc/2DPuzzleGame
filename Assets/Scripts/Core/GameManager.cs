@@ -69,6 +69,7 @@ public class GameManager : MonoBehaviour
 
         ClearHints();
 
+        gameplayUI.CancelAllPopups();
         gameplayUI.HidePanels();
         gridManager.BuildLevel();
 
