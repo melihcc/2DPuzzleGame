@@ -223,8 +223,14 @@ public class TileDragHandler : MonoBehaviour
 
         // ── Temizlik ──────────────────────────────────────────────────────────
         if (destroyThis)
+        {
             Destroy(gameObject);
-        // else: sürüklenen tile hayatta kalıyor (zaten doğru hücrede)
+        }
+        else
+        {
+            // Sürüklenen tile hayatta kalıyor — isMoving sıfırlanmazsa bir daha sürüklenemez
+            isMoving = false;
+        }
     }
 
     private IEnumerator BombMergeWithAnimation(Tile targetTile, List<GridCell> path, GridCell explosionCenter)
