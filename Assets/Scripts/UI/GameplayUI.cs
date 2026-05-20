@@ -29,7 +29,7 @@ public class GameplayUI : MonoBehaviour
     public Image star2Image;
     public Image star3Image;
 
-    private static readonly Color StarActiveColor   = new Color(1f, 0.84f, 0f);   // Altın
+    private static readonly Color StarActiveColor   = new Color(1f, 0.84f, 0f);    // Altın
     private static readonly Color StarInactiveColor = new Color(0.3f, 0.3f, 0.3f); // Gri
 
     [Header("Combo")]
@@ -42,7 +42,8 @@ public class GameplayUI : MonoBehaviour
     private Coroutine comboCoroutine;
     private Coroutine flashCoroutine;
     private Coroutine starEarnedCoroutine;
-    private int currentRemainingMoves;
+    private int   currentRemainingMoves;
+    private float nextPopupTime = 0f; // Sıradaki popup bu zamandan önce başlayamaz
 
     // ─── Level / Score / Moves ───────────────────────────────────────────────
 
@@ -112,12 +113,29 @@ public class GameplayUI : MonoBehaviour
 
     private IEnumerator StarEarnedRoutine(int stars)
     {
-        string starStr = stars == 1 ? "⭐" : stars == 2 ? "⭐⭐" : "⭐⭐⭐";
-        starEarnedText.text  = $"{starStr} New Star!";
+        // Önceki popup bitmeden bekle (combo ile çakışmasın)
+        float waitTime = nextPopupTime - Time.time;
+        if (waitTime > 0f)
+            yield return new WaitForSeconds(waitTime);
+
+        // Bu popup için süre rezerve et
+        float myDuration    = 0.25f + 0.9f + 0.3f + 0.1f; // pop-in + hold + fade + buffer
+        nextPopupTime = Time.time + myDuration;
+
+        // Metin — sadece ASCII/Latin karakterler (emoji font bağımlılığı yok)
+        string label = stars switch
+        {
+            1 => "New Star!",
+            2 => "2nd Star!",
+            3 => "3 Stars! Perfect!",
+            _ => "New Star!"
+        };
+
+        starEarnedText.text  = label;
         starEarnedText.color = new Color(1f, 0.9f, 0f, 1f);
         starEarnedText.gameObject.SetActive(true);
 
-        // Pop in
+        // Pop-in (overshoot)
         starEarnedText.transform.localScale = Vector3.zero;
         float timer = 0f;
         while (timer < 0.25f)
@@ -132,6 +150,7 @@ public class GameplayUI : MonoBehaviour
         }
         starEarnedText.transform.localScale = Vector3.one;
 
+        // Ekranda tut
         yield return new WaitForSeconds(0.9f);
 
         // Fade out
@@ -195,16 +214,20 @@ public class GameplayUI : MonoBehaviour
 
         comboCoroutine = StartCoroutine(ShowComboRoutine(comboMultiplier));
 
-        // Yüksek combo'da ekran flaşı
+        // Combo popup süresi kadar sonraki popup'ı ertele
+        float comboDuration = 0.18f + 0.6f + 0.15f; // pop-in + display + buffer
+        if (Time.time + comboDuration > nextPopupTime)
+            nextPopupTime = Time.time + comboDuration;
+
         if (comboMultiplier >= 3)
             TriggerScreenFlash(GetComboFlashColor(comboMultiplier));
     }
 
     private Color GetComboFlashColor(int multiplier)
     {
-        if (multiplier >= 5) return new Color(1f, 0.2f, 0.2f, 0.3f);  // kırmızı
-        if (multiplier >= 4) return new Color(1f, 0.5f, 0f,   0.25f); // turuncu
-        return new Color(1f, 0.9f, 0f, 0.2f);                          // sarı
+        if (multiplier >= 5) return new Color(1f, 0.2f, 0.2f, 0.3f);
+        if (multiplier >= 4) return new Color(1f, 0.5f, 0f,   0.25f);
+        return new Color(1f, 0.9f, 0f, 0.2f);
     }
 
     private IEnumerator ShowComboRoutine(int comboMultiplier)

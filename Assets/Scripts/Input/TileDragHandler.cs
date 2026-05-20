@@ -33,7 +33,8 @@ public class TileDragHandler : MonoBehaviour
 
     public void BeginDrag()
     {
-        if (gameManager.IsGameOver || isMoving)
+        // Global kilit: herhangi bir tile hareket ediyorsa yeni drag başlatma
+        if (gameManager.IsGameOver || isMoving || gameManager.IsAnyTileMoving)
             return;
 
         originalCell = tile.CurrentCell;
@@ -48,7 +49,7 @@ public class TileDragHandler : MonoBehaviour
 
     public void Drag(Vector3 worldPosition)
     {
-        if (gameManager.IsGameOver || isMoving || previewTile == null)
+        if (gameManager.IsGameOver || isMoving || previewTile == null || originalCell == null)
             return;
 
         previewTile.transform.position = worldPosition;
@@ -78,7 +79,7 @@ public class TileDragHandler : MonoBehaviour
 
     public void EndDrag()
     {
-        if (gameManager.IsGameOver || isMoving)
+        if (gameManager.IsGameOver || isMoving || originalCell == null)
             return;
 
         HidePreviewFeedback();
@@ -105,7 +106,7 @@ public class TileDragHandler : MonoBehaviour
         if (!gameManager.HasEnoughMoves(path.Count))
             return;
 
-        // ── Empty cell: move ──────────────────────────────────────────────────
+        // ── Boş hücre: taşı ──────────────────────────────────────────────────
         if (targetCell.IsEmpty)
         {
             gameManager.SaveStateForUndo();
@@ -114,7 +115,7 @@ public class TileDragHandler : MonoBehaviour
             return;
         }
 
-        // ── Occupied cell: check merge eligibility ────────────────────────────
+        // ── Dolu hücre: merge kontrolü ────────────────────────────────────────
         Tile targetTile = targetCell.CurrentTile;
 
         bool isBomb = tile.TileType == TileType.Bomb || targetTile.TileType == TileType.Bomb;
@@ -141,6 +142,7 @@ public class TileDragHandler : MonoBehaviour
     private IEnumerator MoveToCellWithAnimation(GridCell targetCell, List<GridCell> path)
     {
         isMoving = true;
+        gameManager.SetTileMoving(true);
 
         originalCell.ClearTile();
         tile.SetCellWithoutMoving(targetCell);
@@ -152,21 +154,52 @@ public class TileDragHandler : MonoBehaviour
 
         yield return StartCoroutine(tile.MoveAlongPath(path));
 
+        gameManager.SetTileMoving(false);
         isMoving = false;
     }
 
     private IEnumerator MergeWithAnimation(Tile targetTile, List<GridCell> path)
     {
         isMoving = true;
+        gameManager.SetTileMoving(true);
 
         originalCell.ClearTile();
 
         yield return StartCoroutine(tile.MoveAlongPath(path));
 
-        bool isWild = tile.TileType == TileType.Wild || targetTile.TileType == TileType.Wild;
+        bool thisIsWild   = tile.TileType       == TileType.Wild;
+        bool targetIsWild = targetTile.TileType  == TileType.Wild;
+        bool isWild       = thisIsWild || targetIsWild;
 
-        targetTile.IncreaseLevel();
-        targetTile.PlayMergeParticle();
+        // ── Hangi tile hayatta kalır? ─────────────────────────────────────────
+        // Kural: Wild olmayan tile hayatta kalır (seviye artar), Wild yutulur.
+        // İkisi de Wild ise target hayatta kalır (mevcut davranış).
+        Tile survivingTile;
+        bool destroyThis; // true → gameObject (sürüklenen), false → targetTile
+
+        if (targetIsWild && !thisIsWild)
+        {
+            // Normal tile → Wild tile: Wild yutulur, Normal tile target hücresine geçer.
+            GridCell targetCell = targetTile.CurrentCell;
+            targetCell.ClearTile();
+            tile.SetCellWithoutMoving(targetCell);
+            targetCell.SetTile(tile);
+            Destroy(targetTile.gameObject);
+
+            survivingTile = tile;
+            destroyThis   = false; // bu tile kalmaya devam eder
+        }
+        else
+        {
+            // Wild tile → Normal tile  (veya Wild → Wild)
+            // Target tile hayatta kalır, sürüklenen yok edilir.
+            survivingTile = targetTile;
+            destroyThis   = true;
+        }
+
+        // ── Görsel & ses ──────────────────────────────────────────────────────
+        survivingTile.IncreaseLevel();
+        survivingTile.PlayMergeParticle();
 
         if (audioManager != null)
         {
@@ -174,33 +207,39 @@ public class TileDragHandler : MonoBehaviour
             else        audioManager.PlayMergeSound();
         }
 
-        float shakeStrength = 0.03f + targetTile.Level * 0.01f;
+        float shakeStrength = 0.03f + survivingTile.Level * 0.01f;
         if (isWild) shakeStrength *= 1.5f;
         if (cameraShaker != null) cameraShaker.Shake(0.08f, shakeStrength);
 
-        yield return StartCoroutine(targetTile.PlayMergePunch());
+        yield return StartCoroutine(survivingTile.PlayMergePunch());
 
-        int baseScore  = targetTile.Level * 100;
+        // ── Skor ─────────────────────────────────────────────────────────────
+        int baseScore = survivingTile.Level * 100;
         if (isWild) baseScore = Mathf.RoundToInt(baseScore * 1.25f);
 
-        gameManager.RegisterMergeResult(path.Count, baseScore, targetTile.transform.position);
+        gameManager.SetTileMoving(false);
+        gameManager.RegisterMergeResult(path.Count, baseScore, survivingTile.transform.position);
         gameManager.HandleAfterMerge();
 
-        Destroy(gameObject);
+        // ── Temizlik ──────────────────────────────────────────────────────────
+        if (destroyThis)
+            Destroy(gameObject);
+        // else: sürüklenen tile hayatta kalıyor (zaten doğru hücrede)
     }
 
     private IEnumerator BombMergeWithAnimation(Tile targetTile, List<GridCell> path, GridCell explosionCenter)
     {
         isMoving = true;
+        gameManager.SetTileMoving(true);
 
         originalCell.ClearTile();
 
         yield return StartCoroutine(tile.MoveAlongPath(path));
 
-        // Patlama
-        if (audioManager  != null) audioManager.PlayBombSound();
-        if (cameraShaker  != null) cameraShaker.Shake(0.22f, 0.18f);
+        if (audioManager != null) audioManager.PlayBombSound();
+        if (cameraShaker != null) cameraShaker.Shake(0.22f, 0.18f);
 
+        // Komşuları patlat (merkez hâlâ targetTile içeriyor, oraya spawn olmaz)
         int explosionScore = gridManager.ExplodeBomb(explosionCenter);
 
         int baseScore = Mathf.Max(tile.Level, targetTile.Level) * 150;
@@ -214,13 +253,14 @@ public class TileDragHandler : MonoBehaviour
                 4f
             );
 
-        // Merkezdeki tile'ı temizle
-        explosionCenter.ClearTile();
-        Destroy(targetTile.gameObject);
-
+        // Önce score/spawn kaydet (explosionCenter hâlâ dolu, yanlış spawn olmaz)
+        gameManager.SetTileMoving(false);
         gameManager.RegisterMergeResult(path.Count, total, explosionCenter.transform.position);
         gameManager.HandleAfterMerge();
 
+        // Sonra merkezi temizle
+        explosionCenter.ClearTile();
+        Destroy(targetTile.gameObject);
         Destroy(gameObject);
     }
 

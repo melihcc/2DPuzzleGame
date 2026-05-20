@@ -73,7 +73,7 @@ public class GameManager : MonoBehaviour
         gridManager.BuildLevel();
 
         gameplayUI.UpdateLevel(levelManager.CurrentLevelIndex);
-        gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
+        gameplayUI.UpdateScore(currentScore, levelManager.CurrentLevel.targetScore);
         gameplayUI.UpdateMoves(remainingMoves);
         gameplayUI.UpdateHints(remainingHints);
         gameplayUI.UpdateUndos(remainingUndos);
@@ -143,7 +143,6 @@ public class GameManager : MonoBehaviour
         currentScore += finalScore;
 
         gameplayUI.UpdateMoves(remainingMoves);
-        gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
 
         // Floating score
         Color  textColor = comboMultiplier > 1 ? new Color(1f, 0.85f, 0f) : Color.white;
@@ -153,7 +152,7 @@ public class GameManager : MonoBehaviour
         if (comboMultiplier > 1)
             gameplayUI.ShowCombo(comboMultiplier);
 
-        // Canlı yıldız güncellemesi
+        // Canlı yıldız + skor güncelleme (eşik de dinamik olarak değişir)
         UpdateLiveStars();
 
         CheckGameState();
@@ -162,6 +161,22 @@ public class GameManager : MonoBehaviour
     public void RegisterMergeResult(int moveCost, int scoreAmount)
         => RegisterMergeResult(moveCost, scoreAmount, Vector3.zero);
 
+    // ─── Dynamic score threshold ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Score metninde gösterilecek bir sonraki yıldızın eşiği.
+    /// Mevcut yıldız sayısına göre ilerler: ★=targetScore, ★★=threshold2, ★★★=threshold3
+    /// </summary>
+    private int GetNextStarThreshold()
+    {
+        LevelData level = levelManager.CurrentLevel;
+        int stars = CalculateStars();
+
+        if (stars >= 2 && level.starThreshold3 > 0) return level.starThreshold3;
+        if (stars >= 1 && level.starThreshold2 > 0) return level.starThreshold2;
+        return level.targetScore;
+    }
+
     // ─── Live stars ───────────────────────────────────────────────────────────
 
     private void UpdateLiveStars()
@@ -169,23 +184,14 @@ public class GameManager : MonoBehaviour
         int stars = CalculateStars();
         gameplayUI.UpdateLiveStars(stars, levelManager.CurrentLevel);
 
+        // Skor eşiği dinamik: 1. yıldız sonrası 2. yıldız hedefini göster
+        gameplayUI.UpdateScore(currentScore, GetNextStarThreshold());
+
         if (stars > lastShownStars)
         {
             lastShownStars = stars;
             gameplayUI.ShowStarEarned(stars);
         }
-    }
-
-    // ─── Finish (oyuncu manuel bitirir) ──────────────────────────────────────
-
-    public void FinishLevel()
-    {
-        if (IsGameOver) return;
-
-        if (currentScore >= levelManager.TargetScore)
-            WinLevel();
-        else
-            LoseLevel();
     }
 
     // ─── Auto-spawn ───────────────────────────────────────────────────────────
@@ -327,22 +333,21 @@ public class GameManager : MonoBehaviour
         undoSnapshot = null;
         remainingUndos--;
 
-        gameplayUI.UpdateScore(currentScore, levelManager.TargetScore);
         gameplayUI.UpdateMoves(remainingMoves);
         gameplayUI.UpdateUndos(remainingUndos);
-        UpdateLiveStars();
+        UpdateLiveStars(); // score text + live stars birlikte güncellenir
     }
 
     // ─── Game state check ─────────────────────────────────────────────────────
 
     private void CheckGameState()
     {
-        // Skor yeterli olsa bile oyun BİTMEZ — oyuncu devam edebilir veya "Bitir" der
-        // Oyun sadece hamle bitince veya merge kalmayınca biter
+        // Oyun SADECE hamle bitince ya da merge kalmayınca biter.
+        // Skor hedefe ulaşmak oyunu bitirmez — oyuncu kalan hamleleri kullanabilir.
 
         if (remainingMoves <= 0)
         {
-            if (currentScore >= levelManager.TargetScore)
+            if (currentScore >= levelManager.CurrentLevel.targetScore)
                 WinLevel();
             else
                 LoseLevel();
@@ -351,7 +356,7 @@ public class GameManager : MonoBehaviour
 
         if (!HasAnyPossibleMerge())
         {
-            if (currentScore >= levelManager.TargetScore)
+            if (currentScore >= levelManager.CurrentLevel.targetScore)
                 WinLevel();
             else
                 LoseLevel();
@@ -435,13 +440,11 @@ public class GameManager : MonoBehaviour
     {
         int idx = levelManager.CurrentLevelArrayIndex;
 
-        // Yıldız kaydet (sadece daha iyiyse)
         string key   = $"Stars_{idx}";
         int    saved = PlayerPrefs.GetInt(key, 0);
         if (stars > saved)
             PlayerPrefs.SetInt(key, stars);
 
-        // Sonraki leveli aç
         if (stars > 0)
         {
             int highest = PlayerPrefs.GetInt("HighestUnlockedLevel", 0);
