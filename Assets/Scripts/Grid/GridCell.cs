@@ -58,11 +58,11 @@ public class GridCell : MonoBehaviour
 
         if (CellType == CellType.Blocked)
         {
-            spriteRenderer.color = new Color(0.15f, 0.15f, 0.15f, 1f);
+            spriteRenderer.color = new Color(0.082f, 0.082f, 0.145f, 1f); // #151525
         }
         else
         {
-            spriteRenderer.color = new Color(0.78f, 0.78f, 0.78f, 1f);
+            spriteRenderer.color = new Color(0.208f, 0.208f, 0.376f, 1f); // #353560
         }
     }
 }

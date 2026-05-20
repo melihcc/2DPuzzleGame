@@ -7,7 +7,11 @@ public class Tile : MonoBehaviour
 {
     [Header("Visual")]
     public SpriteRenderer spriteRenderer;
-    public TMP_Text levelText;
+    public TMP_Text       levelText;
+
+    [Header("Special Tile Icons (opsiyonel — atanırsa harf yerine ikon gösterilir)")]
+    public SpriteRenderer wildIconRenderer;
+    public SpriteRenderer bombIconRenderer;
 
     [Header("Movement")]
     public float moveSpeed = 8f;
@@ -224,25 +228,41 @@ public class Tile : MonoBehaviour
         {
             case TileType.Wild:
                 if (spriteRenderer != null) spriteRenderer.color = WildColor;
-                if (levelText != null)
+                if (wildIconRenderer != null)
                 {
+                    // Sprite atandıysa ikonu göster, metni gizle
+                    wildIconRenderer.gameObject.SetActive(true);
+                    if (levelText != null) levelText.gameObject.SetActive(false);
+                }
+                else if (levelText != null)
+                {
+                    levelText.gameObject.SetActive(true);
                     levelText.text  = "W";
                     levelText.color = new Color(0.15f, 0.08f, 0f);
                 }
+                if (bombIconRenderer != null) bombIconRenderer.gameObject.SetActive(false);
                 break;
 
             case TileType.Bomb:
                 if (spriteRenderer != null) spriteRenderer.color = BombColor;
-                if (levelText != null)
+                if (bombIconRenderer != null)
                 {
+                    bombIconRenderer.gameObject.SetActive(true);
+                    if (levelText != null) levelText.gameObject.SetActive(false);
+                }
+                else if (levelText != null)
+                {
+                    levelText.gameObject.SetActive(true);
                     levelText.text  = "B";
                     levelText.color = Color.white;
                 }
+                if (wildIconRenderer != null) wildIconRenderer.gameObject.SetActive(false);
                 break;
 
             default:
                 if (levelText != null)
                 {
+                    levelText.gameObject.SetActive(true);
                     levelText.text  = Level.ToString();
                     levelText.color = Color.white;
                 }
@@ -251,6 +271,8 @@ public class Tile : MonoBehaviour
                     int idx = Mathf.Clamp(Level - 1, 0, LevelColors.Length - 1);
                     spriteRenderer.color = LevelColors[idx];
                 }
+                if (wildIconRenderer != null) wildIconRenderer.gameObject.SetActive(false);
+                if (bombIconRenderer != null) bombIconRenderer.gameObject.SetActive(false);
                 break;
         }
     }
